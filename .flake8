@@ -1,0 +1,39 @@
+[flake8]
+exclude =
+    .git,
+    __pycache__,
+    venv,
+    .venv,
+    build,
+    dist,
+    .mypy_cache,
+    .pytest_cache,
+    .idea,
+    .vscode,
+    alembic,
+    alembic_versions,
+    migrations,
+    migration/versions
+
+max-line-length = 120
+
+extend-ignore =
+    E203,
+    W503,
+    E501,
+    W291,
+    W292,
+    W391,
+    E303,
+    E302,
+    E301,
+    E261,
+    E262,
+    E225,
+    E221,
+    E128
+
+per-file-ignores =
+    migration/env.py: F401,E402
+    migration/versions/*.py: F401,E402,E501
+    src/schemas/purchase.py: F722

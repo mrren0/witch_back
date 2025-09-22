@@ -1,0 +1,8 @@
+logs/app.log
+/.venv/
+/.venv1/
+/__pycache__/
+/logs-green/
+/logs-blue/
+/logs/
+/logs/

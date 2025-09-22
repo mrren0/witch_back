@@ -1,0 +1,257 @@
+variables:
+  PROJECT_NAME: "$CI_PROJECT_NAME"
+  SSH_TARGET: "$SSH_USER@$SSH_HOST"
+
+  # Пути деплоя
+  PROD_PATH: "/home/gitlab-runner/survive"
+  DEV_PATH:  "/home/gitlab-runner/survive_dev"
+
+  # Путь для бэкапов (РОВНО этот каталог; без подпапок месяца)
+  BACKUP_BASE: "/home/gitlab-runner/backup/$CI_PROJECT_NAME"
+
+  # Контейнеры и параметры БД для бэкапа prod
+  PROD_DB_CONTAINER: "survive_postgres"
+  PROD_DB_USER: "myuser"
+  PROD_DB_NAME: "mydatabase"
+
+  # Для синхры dev
+  DEV_DB_CONTAINER: "survive_dev_postgres"
+  DEV_DB_ADMIN_USER: "myuser"        # админ в dev-контейнере
+  DEV_DB_NAME: "mydatabase_dev"
+
+  # Быстрее скачивание в раннере
+  GIT_STRATEGY: fetch
+
+  # Общие exclude для rsync
+  RSYNC_EXCLUDES: >
+    --exclude .git
+    --exclude .gitlab-ci.yml
+    --exclude .gitignore
+    --exclude '*.txt'
+    --exclude README.md
+    --exclude logs/
+
+stages:
+  - lint          # <-- добавлено
+  - backup
+  - test
+  - deploy
+  - db_sync
+
+# --- общий сниппет для uv + venv, чтобы обойти PEP668 ---
+.uv_setup: &uv_setup
+  - set -euo pipefail
+  - |
+    if ! command -v uv >/dev/null 2>&1; then
+      curl -LsSf https://astral.sh/uv/install.sh | sh
+    fi
+  - export PATH="$HOME/.local/bin:$PATH"
+  - uv --version
+  - uv venv venv --python python3
+  - . venv/bin/activate
+  - if [ -f requirements.txt ]; then uv pip install -r requirements.txt; fi
+
+.default_before: &default_before
+  before_script:
+    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
+    - printf "Host *\n  StrictHostKeyChecking no\n" > ~/.ssh/config && chmod 600 ~/.ssh/config
+    - eval "$(ssh-agent -s)"
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_rsa && chmod 600 ~/.ssh/id_rsa
+    - ssh-add ~/.ssh/id_rsa
+    # создаём пути прод/дев + базу бэкапов заранее
+    - ssh "$SSH_TARGET" "mkdir -p '$PROD_PATH' '$DEV_PATH' '$BACKUP_BASE' && chmod 755 '$PROD_PATH' '$DEV_PATH' '$BACKUP_BASE'"
+
+# ========== LINT (flake8 через uv; мягкий, не валит пайп) ==========
+lint_soft:
+  stage: lint
+  allow_failure: true
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: on_success
+    - if: '$CI_COMMIT_BRANCH == "dev"'
+      when: on_success
+    - when: never
+  script:
+    - *uv_setup
+    - uv pip install flake8==7.1.0
+    - |
+      TARGETS=""
+      for d in src app services backend api; do
+        [ -d "$d" ] && TARGETS="$TARGETS $d"
+      done
+      [ -d tests ] && TARGETS="$TARGETS tests"
+      [ -d migration ] && TARGETS="$TARGETS migration"
+      [ -z "$TARGETS" ] && TARGETS=$(ls -1 *.py 2>/dev/null || true)
+      echo "Линтим (soft): $TARGETS"
+      flake8 --extend-ignore=E501,F401,F541,F811,E227 $TARGETS || true
+
+# ========== BACKUP (main & dev): дамп в корень BACKUP_BASE + чистка старше 7 дней
+backup_prod:
+  stage: backup
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: on_success
+    - if: '$CI_COMMIT_BRANCH == "dev"'
+      when: on_success
+    - when: never
+  <<: *default_before
+  script:
+    - |
+      ssh -T "$SSH_TARGET" \
+        BACKUP_BASE="$BACKUP_BASE" \
+        PROD_DB_CONTAINER="$PROD_DB_CONTAINER" \
+        PROD_DB_USER="$PROD_DB_USER" \
+        PROD_DB_NAME="$PROD_DB_NAME" \
+        bash -seuo pipefail <<'REMOTE'
+      set -euo pipefail
+      mkdir -p "$BACKUP_BASE"
+      FILE="$BACKUP_BASE/backup_$(date +%F_%H-%M).sql"
+      echo "[*] Dump -> $FILE"
+      docker exec "$PROD_DB_CONTAINER" pg_dump -U "$PROD_DB_USER" -d "$PROD_DB_NAME" > "$FILE"
+      chown gitlab-runner:gitlab-runner "$FILE" || true
+      ls -lh "$FILE"
+      echo "[*] Удаляю бэкапы старше 7 дней..."
+      find "$BACKUP_BASE" -type f -name 'backup_*.sql' -mtime +7 -delete
+      REMOTE
+
+# ========== TEST (pytest через uv/venv, без системного pip)
+pytest:
+  stage: test
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: on_success
+    - if: '$CI_COMMIT_BRANCH == "dev"'
+      when: on_success
+    - when: never
+  script:
+    - *uv_setup
+    - |
+      TEST_DIRS=""
+      [ -d tests ] && TEST_DIRS="tests"
+      [ -d src/tests ] && TEST_DIRS="$TEST_DIRS src/tests"
+      if [ -z "$TEST_DIRS" ]; then
+        echo "tests not found → skip"; exit 0
+      fi
+      uv pip install pytest pytest-asyncio pytest-cov
+      pytest -q --maxfail=1 --disable-warnings --cov=src --cov-report=term-missing
+
+# ========== DEPLOY PROD (main)
+deploy_prod:
+  stage: deploy
+  needs: ["backup_prod", "pytest"]   # ждём тесты
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: on_success
+    - when: never
+  variables:
+    TARGET_PATH: "$PROD_PATH"
+    COMPOSE_FILES: "-f docker-compose.base.yaml -f docker-compose.prod.yaml"
+    COMPOSE_PROJECT: "survive"
+  <<: *default_before
+  script:
+    - |
+      cat <<EOT > .deploy.txt
+      Project URL : ${CI_PROJECT_URL}
+      Commit SHA  : ${CI_COMMIT_SHA}
+      From ref    : ${CI_COMMIT_REF_NAME}
+      Commit tag  : ${CI_COMMIT_TAG}
+      Commit auth.: ${CI_COMMIT_AUTHOR}
+      Commit time : ${CI_COMMIT_TIMESTAMP}
+      Stamp       : $(date)
+      EOT
+    - rsync -a --delete $RSYNC_EXCLUDES ./ "$SSH_TARGET:$TARGET_PATH"
+    - ssh "$SSH_TARGET" "rm -f '$TARGET_PATH/docker-compose.test.yaml' || true"
+    - |
+      ssh -T "$SSH_TARGET" "\
+        set -euo pipefail; \
+        cd '$TARGET_PATH' && \
+        docker compose -p ${COMPOSE_PROJECT} ${COMPOSE_FILES} build --pull fastapi && \
+        docker compose -p ${COMPOSE_PROJECT} ${COMPOSE_FILES} up -d --build && \
+        docker compose -p ${COMPOSE_PROJECT} ${COMPOSE_FILES} ps && \
+        docker builder prune -f \
+      "
+
+# ========== DEPLOY DEV (dev)
+deploy_dev:
+  stage: deploy
+  needs: ["backup_prod", "pytest"]   # ждём тесты
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "dev"'
+      when: on_success
+    - when: never
+  variables:
+    TARGET_PATH: "$DEV_PATH"
+    COMPOSE_FILES: "-f docker-compose.base.yaml -f docker-compose.test.yaml"
+    COMPOSE_PROJECT: "survive_dev"
+  <<: *default_before
+  script:
+    - rsync -a --delete $RSYNC_EXCLUDES ./ "$SSH_TARGET:$TARGET_PATH"
+    - ssh "$SSH_TARGET" "rm -f '$TARGET_PATH/docker-compose.prod.yaml' || true"
+    - |
+      ssh -T "$SSH_TARGET" "\
+        set -euo pipefail; \
+        cd '$TARGET_PATH' && \
+        docker compose -p ${COMPOSE_PROJECT} ${COMPOSE_FILES} build --pull fastapi && \
+        docker compose -p ${COMPOSE_PROJECT} ${COMPOSE_FILES} up -d --build && \
+        docker compose -p ${COMPOSE_PROJECT} ${COMPOSE_FILES} ps && \
+        docker builder prune -f \
+      "
+
+# ========== MANUAL: залить САМЫЙ СВЕЖИЙ дамп в dev (только dev)
+sync_dev_from_latest_dump:
+  stage: db_sync
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "dev"'
+      when: manual
+      allow_failure: false
+    - when: never
+  <<: *default_before
+  script:
+    - |
+      ssh -T "$SSH_TARGET" \
+        BACKUP_BASE="$BACKUP_BASE" \
+        DEV_DB_CONTAINER="$DEV_DB_CONTAINER" \
+        DEV_DB_ADMIN_USER="$DEV_DB_ADMIN_USER" \
+        DEV_DB_NAME="$DEV_DB_NAME" \
+        DEV_DB_USER="myuser_dev" \
+        DEV_DB_PASSWORD="$DEV_DB_PASSWORD" \
+        bash -seuo pipefail <<'REMOTE'
+      set -euo pipefail
+
+      echo "[*] Ищу самый свежий бэкап..."
+      LAST_DUMP="$(ls -t "$BACKUP_BASE"/backup_*.sql 2>/dev/null | head -n1 || true)"
+      [ -n "$LAST_DUMP" ] || { echo "Не найдено файлов backup_*.sql в $BACKUP_BASE"; exit 1; }
+      echo "[*] Использую: $LAST_DUMP"
+
+      echo "[*] Закрываю коннекты"
+      docker exec "$DEV_DB_CONTAINER" psql -U "$DEV_DB_ADMIN_USER" -d postgres -c \
+        "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='${DEV_DB_NAME}' AND pid<>pg_backend_pid();" || true
+
+      echo "[*] Пересоздаю БД $DEV_DB_NAME"
+      docker exec "$DEV_DB_CONTAINER" dropdb  -U "$DEV_DB_ADMIN_USER" --if-exists "$DEV_DB_NAME"
+      docker exec "$DEV_DB_CONTAINER" createdb -U "$DEV_DB_ADMIN_USER" "$DEV_DB_NAME"
+
+      echo "[*] Восстанавливаю $LAST_DUMP"
+      docker exec -i "$DEV_DB_CONTAINER" psql -U "$DEV_DB_ADMIN_USER" -d "$DEV_DB_NAME" < "$LAST_DUMP"
+
+      echo "[*] Создаю роль, если её нет: $DEV_DB_USER"
+      docker exec "$DEV_DB_CONTAINER" psql -U "$DEV_DB_ADMIN_USER" -d postgres -v ON_ERROR_STOP=1 -c "
+        DO \$\$
+        BEGIN
+          IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${DEV_DB_USER}') THEN
+            EXECUTE format('CREATE ROLE %I LOGIN %s', '${DEV_DB_USER}', CASE WHEN length('${DEV_DB_PASSWORD}')>0 THEN 'PASSWORD '''||replace('${DEV_DB_PASSWORD}','''','''''')||'''' ELSE '' END);
+          END IF;
+        END
+        \$\$;
+      "
+
+      echo "[*] Передаю владение БД и выставляю права"
+      docker exec "$DEV_DB_CONTAINER" psql -U "$DEV_DB_ADMIN_USER" -d postgres -v ON_ERROR_STOP=1 -c "ALTER DATABASE ${DEV_DB_NAME} OWNER TO ${DEV_DB_USER};"
+      docker exec "$DEV_DB_CONTAINER" psql -U "$DEV_DB_ADMIN_USER" -d "$DEV_DB_NAME" -v ON_ERROR_STOP=1 -c "GRANT ALL PRIVILEGES ON SCHEMA public TO ${DEV_DB_USER};"
+      docker exec "$DEV_DB_CONTAINER" psql -U "$DEV_DB_ADMIN_USER" -d "$DEV_DB_NAME" -v ON_ERROR_STOP=1 -c "GRANT ALL PRIVILEGES ON ALL TABLES    IN SCHEMA public TO ${DEV_DB_USER};"
+      docker exec "$DEV_DB_CONTAINER" psql -U "$DEV_DB_ADMIN_USER" -d "$DEV_DB_NAME" -v ON_ERROR_STOP=1 -c "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO ${DEV_DB_USER};"
+      docker exec "$DEV_DB_CONTAINER" psql -U "$DEV_DB_ADMIN_USER" -d "$DEV_DB_NAME" -v ON_ERROR_STOP=1 -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES    TO ${DEV_DB_USER};"
+      docker exec "$DEV_DB_CONTAINER" psql -U "$DEV_DB_ADMIN_USER" -d "$DEV_DB_NAME" -v ON_ERROR_STOP=1 -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO ${DEV_DB_USER};"
+
+      echo "[✓] Dev восстановлена из $LAST_DUMP, роль ${DEV_DB_USER} готова, права выданы"
+      REMOTE
