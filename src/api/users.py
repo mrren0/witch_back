@@ -80,6 +80,13 @@ async def get_user_api(
 async def _change_user_data(
     user_to_save: UserSchemaForChange, accessToken: str | None
 ) -> JSONResponse:
+    if accessToken is None:
+        raise HTTPException(status_code=400, detail="accessToken header missing")
+
+    token = await TokenCore().is_access_token(accessToken)
+    await UserCore().change_user(user_to_save, token.user.phone)
+    return JSONResponse(content="change success", status_code=200)
+
 
 @router.get("/purchases", response_model=PurchaseHistoryListSchema)
 async def get_user_purchases(
@@ -91,20 +98,6 @@ async def get_user_purchases(
     token = await TokenCore().is_access_token(accessToken)
     purchases = await TransactionCore().get_user_purchases(token.user.id)
     return purchases
-
-
-@router.put("")        # конечный URL: /api/user
-async def save_user(
-    user_to_save: UserSchemaForChange,
-    accessToken: str | None = Header(default=None, alias="accessToken"),
-):
-
-    if accessToken is None:
-        raise HTTPException(status_code=400, detail="accessToken header missing")
-
-    token = await TokenCore().is_access_token(accessToken)
-    await UserCore().change_user(user_to_save, token.user.phone)
-    return JSONResponse(content="change success", status_code=200)
 
 
 @router.put("")        # конечный URL: /api/user
