@@ -80,6 +80,7 @@ async def get_user_api(
 async def _change_user_data(
     user_to_save: UserSchemaForChange, accessToken: str | None
 ) -> JSONResponse:
+
     """Validate the access token and persist the provided user payload."""
 
     if accessToken is None:
@@ -89,7 +90,6 @@ async def _change_user_data(
     await UserCore().change_user(user_to_save, token.user.phone)
 
     return JSONResponse(content={"detail": "change success"}, status_code=200)
-
 
 @router.get("/purchases", response_model=PurchaseHistoryListSchema)
 async def get_user_purchases(
