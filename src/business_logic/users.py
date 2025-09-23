@@ -33,17 +33,19 @@ class UserCore:
     @staticmethod
     async def change_user(user: UserSchemaForChange, phone: str):
         user_from_db = await UserRepository().get(phone=phone)
-        logger.info(f'before add gold = {user.gold}')
-        logger.info(f'gold to add = {user.gold}')
-        user_from_db.gold = user.gold
-        user_from_db.skin = user.skin
-        user_from_db.wood = user.wood
-        user_from_db.stone = user.stone
-        user_from_db.grass = user.grass
-        user_from_db.berry = user.berry
-        user_from_db.brick = user.brick
-        user_from_db.fish = user.fish
-        user_from_db.boards = user.boards
-        user_from_db.rope = user.rope
-        user_from_db.last_update = Time.now()
+        if user_from_db is None:
+            logger.warning(f"User with phone {phone} not found for update")
+            return
+        logger.info(f'before add coins = {user_from_db.coins}')
+        logger.info(f'coins to add = {user.coins}')
+        user_from_db.coins = user.coins
+        user_from_db.common_seed = user.common_seed
+        user_from_db.epic_seed = user.epic_seed
+        user_from_db.rare_seed = user.rare_seed
+        user_from_db.water = user.water
+        user_from_db.level = user.level
+        user_from_db.booster = user.booster
+        user_from_db.item = user.item
+        user_from_db.pot = user.pot
+        user_from_db.last_active_time = Time.now()
         await UserRepository().add(user_from_db)
