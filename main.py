@@ -17,7 +17,7 @@ tags_metadata = [
 token_scheme = APIKeyHeader(name="accessToken")
 
 app = FastAPI(
-    title="SurviveAPI",
+    title="WitchBack API",
     version="0.1.0",
     docs_url="/docs",
     openapi_tags=tags_metadata,

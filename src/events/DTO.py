@@ -1,7 +1,7 @@
 # src/events/DTO.py
 from __future__ import annotations
 
-"""Survive — Events Pydantic DTOs."""
+"""WitchBack — Events Pydantic DTOs."""
 
 from datetime import datetime
 from typing import Optional, List, Dict, Union
