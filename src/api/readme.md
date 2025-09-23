@@ -17,9 +17,13 @@ https://<your-domain>/api
 ### Пользователь
 | Запрос | Метод | Параметры | Ответ |
 | --- | --- | --- | --- |
+
 | `/user` | `GET` | — | Текущий пользователь |
 | `/user` | `PUT` | Тело `UserSchemaForChange` | `"change success"` |
 | `/user` | `POST` | Тело `UserSchemaForChange` | `"change success"` |
+| `/user/profile` | `GET` | — | Текущий пользователь |
+| `/user/purchases` | `GET` | — | История покупок текущего пользователя |
+
 
 ### Продукты
 | Запрос | Метод | Параметры | Ответ |
@@ -40,6 +44,11 @@ https://<your-domain>/api
 | --- | --- | --- | --- |
 | `/prizes/unclaimed` | `GET` | — | Незабранные призы |
 | `/prizes/claim` | `POST` | `{"prize_id":…}` | `{ "claimed":true }` |
+
+### Система (src/api/system.py)
+| Запрос | Метод | Параметры | Ответ |
+| --- | --- | --- | --- |
+| `/system/time` | `GET` | — | `{ "utc_time": "2025-01-01T00:00:00+00:00" }` |
 
 ---
 

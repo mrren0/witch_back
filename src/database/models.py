@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, DateTime, func, text
+from sqlalchemy import ForeignKey, DateTime, Float, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.database.connection import Base
@@ -36,6 +36,9 @@ class UserModel(Base):
 
     token: Mapped["TokenModel"] = relationship(
         "TokenModel", uselist=False, back_populates="user"
+    )
+    roulette_items: Mapped[list["RouletteItemModel"]] = relationship(
+        "RouletteItemModel", back_populates="user"
     )
 
     def to_read_model_without_orm(self):  # -> UserSchemaWithoutOrm
@@ -122,3 +125,17 @@ class UnaddedProduct(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     id_user: Mapped[int] = mapped_column(ForeignKey("users.id"))
     productId: Mapped[int] = mapped_column(ForeignKey("products.id"))
+
+
+class RouletteItemModel(Base):
+    __tablename__ = "roulette_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    item: Mapped[str] = mapped_column()
+    quantity: Mapped[int] = mapped_column(default=0, server_default=text("0"))
+    chance: Mapped[float] = mapped_column(Float, default=0, server_default=text("0"))
+
+    user: Mapped["UserModel"] = relationship(
+        "UserModel", back_populates="roulette_items"
+    )

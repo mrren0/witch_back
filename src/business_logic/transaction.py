@@ -3,6 +3,11 @@ from fastapi import HTTPException
 from src.database.models import TransactionModel
 from src.repository.transaction import TransactionRepository
 from src.repository.users import UserRepository
+from src.schemas.purchase import (
+    PurchaseHistoryItemSchema,
+    PurchaseHistoryListSchema,
+    PurchaseProductSchema,
+)
 
 
 class TransactionCore:
@@ -49,3 +54,30 @@ class TransactionCore:
             purchaseId=purchaseId
         )
         return transaction_model
+
+    @staticmethod
+    async def get_user_purchases(user_id: int) -> PurchaseHistoryListSchema:
+        transactions = await TransactionRepository().list_by_user(user_id)
+        purchase_items: list[PurchaseHistoryItemSchema] = []
+
+        for transaction, product in transactions:
+            product_schema = (
+                PurchaseProductSchema.model_validate(product)
+                if product is not None
+                else PurchaseProductSchema(
+                    id=transaction.productId,
+                    name="Unknown product",
+                    price=None,
+                )
+            )
+
+            purchase_items.append(
+                PurchaseHistoryItemSchema(
+                    id=transaction.id,
+                    status=transaction.status,
+                    product=product_schema,
+                    created_at=transaction.created_at,
+                )
+            )
+
+        return PurchaseHistoryListSchema(purchases=purchase_items)
