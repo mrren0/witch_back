@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Optional
 
 from pydantic import BaseModel
@@ -8,8 +9,10 @@ from src.schemas.tokens import TokenSchema
 class UserSchema(BaseModel):
     id: int
     phone: str
+
     coins: int
     skin: str
+
     common_seed: int
     epic_seed: int
     rare_seed: int
@@ -18,6 +21,10 @@ class UserSchema(BaseModel):
     booster: int
     item: int
     pot: int
+
+    created_at: datetime
+    last_update: datetime
+
     token: Optional[TokenSchema]
 
     class Config:
@@ -25,6 +32,7 @@ class UserSchema(BaseModel):
 
 
 class UserSchemaForChange(BaseModel):
+
     coins: int
     skin: str
     common_seed: int
@@ -42,8 +50,10 @@ class UserSchemaForChange(BaseModel):
 class UserSchemaWithoutOrm(BaseModel):
     id: int
     phone: str
+
     coins: int
     skin: str
+
     common_seed: int
     epic_seed: int
     rare_seed: int
@@ -52,3 +62,7 @@ class UserSchemaWithoutOrm(BaseModel):
     booster: int
     item: int
     pot: int
+
+    created_at: datetime
+    last_update: datetime
+
