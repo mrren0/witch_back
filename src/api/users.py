@@ -2,8 +2,8 @@ from fastapi import APIRouter, Header, HTTPException, Request
 from starlette.responses import JSONResponse
 
 from src.business_logic.buy_product import BuyProductBeeline
-from src.business_logic.transaction import TransactionCore
 from src.business_logic.token import TokenCore
+from src.business_logic.transaction import TransactionCore
 from src.business_logic.users import UserCore
 from src.repository.product import ProductRepository
 from src.repository.productItems import ProductItemRepository
@@ -14,7 +14,7 @@ from src.schemas.users import UserSchemaForChange
 router = APIRouter(prefix="/api/user", tags=["User"])
 
 
-async def add_item_product(user, items_product):
+async def add_item_product(user, items_product) -> UserSchemaForChange:
     if items_product.skin:
         user.skin = items_product.skin
     if items_product.coins:
@@ -50,15 +50,19 @@ async def add_item_product(user, items_product):
     )
 
 
-@router.get("")        # конечный URL: /api/user
+async def _require_token(access_token: str | None):
+    if access_token is None:
+        raise HTTPException(status_code=400, detail="accessToken header missing")
+
+    return await TokenCore().is_access_token(access_token)
+
+
+@router.get("")  # конечный URL: /api/user
 async def get_user_api(
     request: Request,
     accessToken: str | None = Header(default=None, alias="accessToken"),
 ):
-    if accessToken is None:
-        raise HTTPException(status_code=400, detail="accessToken header missing")
-
-    token = await TokenCore().is_access_token(accessToken)
+    token = await _require_token(accessToken)
     user = token.user
 
     un_added = await UnAddedProductRepository.get_one(user.id)
@@ -69,7 +73,7 @@ async def get_user_api(
         user_changed = await add_item_product(user, items_product)
         await UserCore().change_user(user_changed, user.phone)
 
-        token = await TokenCore().is_access_token(accessToken)
+        token = await _require_token(accessToken)
         user = token.user
         await UnAddedProductRepository().delete_one(un_added.id)
 
@@ -82,27 +86,22 @@ async def _change_user_data(
 ) -> JSONResponse:
     """Validate the access token and persist the provided user payload."""
 
-    if accessToken is None:
-        raise HTTPException(status_code=400, detail="accessToken header missing")
-
-    token = await TokenCore().is_access_token(accessToken)
+    token = await _require_token(accessToken)
     await UserCore().change_user(user_to_save, token.user.phone)
 
     return JSONResponse(content={"detail": "change success"}, status_code=200)
+
 
 @router.get("/purchases", response_model=PurchaseHistoryListSchema)
 async def get_user_purchases(
     accessToken: str | None = Header(default=None, alias="accessToken"),
 ):
-    if accessToken is None:
-        raise HTTPException(status_code=400, detail="accessToken header missing")
-
-    token = await TokenCore().is_access_token(accessToken)
+    token = await _require_token(accessToken)
     purchases = await TransactionCore().get_user_purchases(token.user.id)
     return purchases
 
 
-@router.put("")        # конечный URL: /api/user
+@router.put("")  # конечный URL: /api/user
 async def save_user(
     user_to_save: UserSchemaForChange,
     accessToken: str | None = Header(default=None, alias="accessToken"),
@@ -110,7 +109,7 @@ async def save_user(
     return await _change_user_data(user_to_save, accessToken)
 
 
-@router.post("")       # конечный URL: /api/user
+@router.post("")  # конечный URL: /api/user
 async def save_user_post(
     user_to_save: UserSchemaForChange,
     accessToken: str | None = Header(default=None, alias="accessToken"),
@@ -118,13 +117,10 @@ async def save_user_post(
     return await _change_user_data(user_to_save, accessToken)
 
 
-@router.post("/buy")   # конечный URL: /api/user/buy
+@router.post("/buy")  # конечный URL: /api/user/buy
 async def buy_product(
     productId: int,
     accessToken: str | None = Header(default=None, alias="accessToken"),
 ):
-    if accessToken is None:
-        raise HTTPException(status_code=400, detail="accessToken header missing")
-
-    token = await TokenCore().is_access_token(accessToken)
+    token = await _require_token(accessToken)
     return await BuyProductBeeline().buy_product(token.user.phone, productId)
