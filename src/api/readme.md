@@ -39,6 +39,11 @@ https://<your-domain>/api
 | `/prizes/unclaimed` | `GET` | — | Незабранные призы |
 | `/prizes/claim` | `POST` | `{"prize_id":…}` | `{ "claimed":true }` |
 
+### Система (src/api/system.py)
+| Запрос | Метод | Параметры | Ответ |
+| --- | --- | --- | --- |
+| `/system/time` | `GET` | — | `{ "utc_time": "2025-01-01T00:00:00+00:00" }` |
+
 ---
 
 ## Схемы DTO
