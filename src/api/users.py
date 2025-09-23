@@ -76,17 +76,16 @@ async def get_user_api(
     return JSONResponse(content=user.to_read_model_without_orm().dict(), status_code=200)
 
 
-
 async def _change_user_data(
-    user_to_save: UserSchemaForChange, accessToken: str | None
+    user_to_save: UserSchemaForChange,
+    accessToken: str | None,
 ) -> JSONResponse:
-
     """Validate the access token and persist the provided user payload."""
 
     if accessToken is None:
         raise HTTPException(status_code=400, detail="accessToken header missing")
 
-    token = await TokenCore.is_access_token(accessToken)
+    token = await TokenCore().is_access_token(accessToken)
     await UserCore().change_user(user_to_save, token.user.phone)
 
     return JSONResponse(content={"detail": "change success"}, status_code=200)
