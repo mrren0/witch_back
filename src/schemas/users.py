@@ -9,8 +9,10 @@ from src.schemas.tokens import TokenSchema
 class UserSchema(BaseModel):
     id: int
     phone: str
-    skin: str
+
     coins: int
+    skin: str
+
     common_seed: int
     epic_seed: int
     rare_seed: int
@@ -19,8 +21,10 @@ class UserSchema(BaseModel):
     booster: int
     item: int
     pot: int
+
     created_at: datetime
     last_update: datetime
+
     token: Optional[TokenSchema]
 
     class Config:
@@ -28,8 +32,9 @@ class UserSchema(BaseModel):
 
 
 class UserSchemaForChange(BaseModel):
-    skin: str
+
     coins: int
+    skin: str
     common_seed: int
     epic_seed: int
     rare_seed: int
@@ -39,16 +44,16 @@ class UserSchemaForChange(BaseModel):
     item: int
     pot: int
 
-    model_config = {
-        "from_attributes": True
-    }
+    model_config = {"from_attributes": True}
 
 
 class UserSchemaWithoutOrm(BaseModel):
     id: int
     phone: str
-    skin: str
+
     coins: int
+    skin: str
+
     common_seed: int
     epic_seed: int
     rare_seed: int
@@ -57,5 +62,7 @@ class UserSchemaWithoutOrm(BaseModel):
     booster: int
     item: int
     pot: int
+
     created_at: datetime
     last_update: datetime
+
