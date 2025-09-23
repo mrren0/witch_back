@@ -33,10 +33,16 @@ class UserCore:
     @staticmethod
     async def change_user(user: UserSchemaForChange, phone: str):
         user_from_db = await UserRepository().get(phone=phone)
+
+        if user_from_db is None:
+            logger.warning(f"User with phone {phone} not found for update")
+            return
+
         logger.info(f'before add coins = {user.coins}')
         logger.info(f'coins to add = {user.coins}')
         user_from_db.coins = user.coins
         user_from_db.skin = user.skin
+
         user_from_db.common_seed = user.common_seed
         user_from_db.epic_seed = user.epic_seed
         user_from_db.rare_seed = user.rare_seed
