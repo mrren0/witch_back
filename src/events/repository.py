@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Survive — Events repository (предпросмотр за 1 день до старта + задержка +1 день после окончания).
+"""WitchBack — Events repository (предпросмотр за 1 день до старта + задержка +1 день после окончания).
 Rewards передаётся как плоский dict.
 """
 
