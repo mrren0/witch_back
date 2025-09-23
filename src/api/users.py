@@ -2,12 +2,13 @@ from fastapi import APIRouter, Header, HTTPException, Request
 from starlette.responses import JSONResponse
 
 from src.business_logic.buy_product import BuyProductBeeline
+from src.business_logic.transaction import TransactionCore
 from src.business_logic.token import TokenCore
 from src.business_logic.users import UserCore
-from src.infra.logger import logger
 from src.repository.product import ProductRepository
 from src.repository.productItems import ProductItemRepository
 from src.repository.unadded_gold import UnAddedProductRepository
+from src.schemas.purchase import PurchaseHistoryListSchema
 from src.schemas.users import UserSchemaForChange
 
 router = APIRouter(prefix="/api/user", tags=["User"])
@@ -73,6 +74,18 @@ async def get_user_api(
         await UnAddedProductRepository().delete_one(un_added.id)
 
     return JSONResponse(content=user.to_read_model_without_orm().dict(), status_code=200)
+
+
+@router.get("/purchases", response_model=PurchaseHistoryListSchema)
+async def get_user_purchases(
+    accessToken: str | None = Header(default=None, alias="accessToken"),
+):
+    if accessToken is None:
+        raise HTTPException(status_code=400, detail="accessToken header missing")
+
+    token = await TokenCore().is_access_token(accessToken)
+    purchases = await TransactionCore().get_user_purchases(token.user.id)
+    return purchases
 
 
 @router.put("")        # конечный URL: /api/user

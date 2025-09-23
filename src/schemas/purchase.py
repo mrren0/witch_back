@@ -1,5 +1,7 @@
+from datetime import datetime
+from typing import List, Optional, Union
+
 from pydantic import BaseModel, Field, constr
-from typing import Optional, Union, List
 
 
 class ErrorInfo(BaseModel):
@@ -17,3 +19,34 @@ class PurchaseStatus(BaseModel):
     price: float
     externalId: Optional[str] = None
     error: Optional[ErrorInfo] = None
+
+
+class PurchaseProductSchema(BaseModel):
+    id: int
+    name: str
+    price: Optional[int] = None
+
+    model_config = {
+        "from_attributes": True,
+    }
+
+
+class PurchaseHistoryItemSchema(BaseModel):
+    id: int
+    product: PurchaseProductSchema
+    status: str
+    created_at: datetime = Field(..., alias="createdAt")
+
+    model_config = {
+        "from_attributes": True,
+        "populate_by_name": True,
+    }
+
+
+class PurchaseHistoryListSchema(BaseModel):
+    purchases: List[PurchaseHistoryItemSchema]
+
+    model_config = {
+        "from_attributes": True,
+        "populate_by_name": True,
+    }
