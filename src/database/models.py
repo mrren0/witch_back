@@ -15,22 +15,22 @@ class UserModel(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     phone: Mapped[str] = mapped_column(unique=True, index=True)
-    gold: Mapped[int] = mapped_column(default=5)
+    coins: Mapped[int] = mapped_column(default=0, server_default=text("0"))
     skin: Mapped[str] = mapped_column(
         default="38ef8571-0e7d-4926-88db-fcb5a8892adb"
     )
-    wood: Mapped[int] = mapped_column(default=0)
-    stone: Mapped[int] = mapped_column(default=0)
-    grass: Mapped[int] = mapped_column(default=0)
-    berry: Mapped[int] = mapped_column(default=0)
-    brick: Mapped[int] = mapped_column(default=0)
-    fish: Mapped[int] = mapped_column(default=0)
-    boards: Mapped[int] = mapped_column(default=0)
-    rope: Mapped[int] = mapped_column(default=0, server_default=text("0"))
-    created_at: Mapped[datetime] = mapped_column(
+    common_seed: Mapped[int] = mapped_column(default=0, server_default=text("0"))
+    epic_seed: Mapped[int] = mapped_column(default=0, server_default=text("0"))
+    rare_seed: Mapped[int] = mapped_column(default=0, server_default=text("0"))
+    water: Mapped[int] = mapped_column(default=0, server_default=text("0"))
+    level: Mapped[int] = mapped_column(default=1, server_default=text("1"))
+    booster: Mapped[int] = mapped_column(default=0, server_default=text("0"))
+    item: Mapped[int] = mapped_column(default=0, server_default=text("0"))
+    pot: Mapped[int] = mapped_column(default=0, server_default=text("0"))
+    create_time: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
-    last_update: Mapped[datetime] = mapped_column(
+    last_active_time: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
 
@@ -44,16 +44,16 @@ class UserModel(Base):
         return UserSchemaWithoutOrm(
             id=self.id,
             phone=self.phone,
-            gold=self.gold,
+            coins=self.coins,
             skin=self.skin,
-            wood=self.wood,
-            stone=self.stone,
-            grass=self.grass,
-            berry=self.berry,
-            brick=self.brick,
-            fish=self.fish,
-            boards=self.boards,
-            rope=self.rope,
+            common_seed=self.common_seed,
+            epic_seed=self.epic_seed,
+            rare_seed=self.rare_seed,
+            water=self.water,
+            level=self.level,
+            booster=self.booster,
+            item=self.item,
+            pot=self.pot,
         )
 
 
@@ -75,15 +75,15 @@ class ProductItemModel(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     skin: Mapped[str] = mapped_column(default="", server_default="")
-    gold: Mapped[int] = mapped_column(default=0)
-    wood: Mapped[int] = mapped_column(default=0)
-    stone: Mapped[int] = mapped_column(default=0)
-    grass: Mapped[int] = mapped_column(default=0)
-    berry: Mapped[int] = mapped_column(default=0)
-    brick: Mapped[int] = mapped_column(default=0)
-    fish: Mapped[int] = mapped_column(default=0)
-    boards: Mapped[int] = mapped_column(default=0)
-    rope: Mapped[int] = mapped_column(default=0, server_default=text("0"))
+    coins: Mapped[int] = mapped_column(default=0, server_default=text("0"))
+    common_seed: Mapped[int] = mapped_column(default=0, server_default=text("0"))
+    epic_seed: Mapped[int] = mapped_column(default=0, server_default=text("0"))
+    rare_seed: Mapped[int] = mapped_column(default=0, server_default=text("0"))
+    water: Mapped[int] = mapped_column(default=0, server_default=text("0"))
+    level: Mapped[int] = mapped_column(default=0, server_default=text("0"))
+    booster: Mapped[int] = mapped_column(default=0, server_default=text("0"))
+    item: Mapped[int] = mapped_column(default=0, server_default=text("0"))
+    pot: Mapped[int] = mapped_column(default=0, server_default=text("0"))
 
     products: Mapped[list["ProductModel"]] = relationship(
         "ProductModel", back_populates="item"

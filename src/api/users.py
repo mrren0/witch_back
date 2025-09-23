@@ -16,36 +16,36 @@ router = APIRouter(prefix="/api/user", tags=["User"])
 async def add_item_product(user, items_product):
     if items_product.skin:
         user.skin = items_product.skin
-    if items_product.gold:
-        user.gold += items_product.gold
-    if items_product.wood:
-        user.wood += items_product.wood
-    if items_product.stone:
-        user.stone += items_product.stone
-    if items_product.grass:
-        user.grass += items_product.grass
-    if items_product.berry:
-        user.berry += items_product.berry
-    if items_product.brick:
-        user.brick += items_product.brick
-    if items_product.fish:
-        user.fish += items_product.fish
-    if items_product.boards:
-        user.boards += items_product.boards
-    if items_product.rope:
-        user.rope += items_product.rope
+    if items_product.coins:
+        user.coins += items_product.coins
+    if items_product.common_seed:
+        user.common_seed += items_product.common_seed
+    if items_product.epic_seed:
+        user.epic_seed += items_product.epic_seed
+    if items_product.rare_seed:
+        user.rare_seed += items_product.rare_seed
+    if items_product.water:
+        user.water += items_product.water
+    if items_product.level:
+        user.level += items_product.level
+    if items_product.booster:
+        user.booster += items_product.booster
+    if items_product.item:
+        user.item += items_product.item
+    if items_product.pot:
+        user.pot += items_product.pot
 
     return UserSchemaForChange(
-        gold=user.gold,
+        coins=user.coins,
         skin=user.skin,
-        wood=user.wood,
-        stone=user.stone,
-        grass=user.grass,
-        berry=user.berry,
-        brick=user.brick,
-        fish=user.fish,
-        boards=user.boards,
-        rope=user.rope,
+        common_seed=user.common_seed,
+        epic_seed=user.epic_seed,
+        rare_seed=user.rare_seed,
+        water=user.water,
+        level=user.level,
+        booster=user.booster,
+        item=user.item,
+        pot=user.pot,
     )
 
 
