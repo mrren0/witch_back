@@ -17,8 +17,13 @@ https://<your-domain>/api
 ### Пользователь
 | Запрос | Метод | Параметры | Ответ |
 | --- | --- | --- | --- |
+
+| `/user` | `GET` | — | Текущий пользователь |
+| `/user` | `PUT` | Тело `UserSchemaForChange` | `"change success"` |
+| `/user` | `POST` | Тело `UserSchemaForChange` | `"change success"` |
 | `/user/profile` | `GET` | — | Текущий пользователь |
 | `/user/purchases` | `GET` | — | История покупок текущего пользователя |
+
 
 ### Продукты
 | Запрос | Метод | Параметры | Ответ |
