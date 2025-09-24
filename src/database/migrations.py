@@ -8,6 +8,11 @@ from pathlib import Path
 from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
+from sqlalchemy.exc import SQLAlchemyError
+
+from sqlalchemy.ext.asyncio import AsyncConnection
+
+from src.database.connection import Base, engine
 
 from src.infra.logger import logger
 
@@ -72,3 +77,14 @@ def ensure_schema_is_up_to_date() -> None:
             )
         finally:
             fcntl.flock(lock_fp, fcntl.LOCK_UN)
+
+
+async def ensure_all_tables_exist() -> None:
+    """Create any missing tables using the SQLAlchemy metadata."""
+
+    try:
+        async with engine.begin() as connection:  # type: AsyncConnection
+            await connection.run_sync(Base.metadata.create_all)
+    except SQLAlchemyError as exc:
+        logger.error("Failed to create database tables automatically: %s", exc)
+        raise

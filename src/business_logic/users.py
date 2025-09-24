@@ -51,5 +51,5 @@ class UserCore:
         user_from_db.booster = user.booster
         user_from_db.item = user.item
         user_from_db.pot = user.pot
-        user_from_db.last_active_time = Time.now()
+        user_from_db.last_update = Time.now()
         await UserRepository().add(user_from_db)

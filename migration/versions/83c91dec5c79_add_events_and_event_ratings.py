@@ -19,18 +19,30 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # ─── 1. Переименовываем старые таблицы без потери данных ──────────
-    op.rename_table("products-item", "products_item")
-    op.rename_table("unadded-product", "unadded_product")
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
 
-    op.drop_constraint("products_id_product_item_fkey", "products", type_="foreignkey")
-    op.create_foreign_key(
-        "products_id_product_item_fkey",
-        "products",
-        "products_item",
-        ["id_product_item"],
-        ["id"],
-    )
+    table_names = inspector.get_table_names()
+
+    if "products-item" in table_names and "products_item" not in table_names:
+        op.rename_table("products-item", "products_item")
+
+    if "unadded-product" in table_names and "unadded_product" not in table_names:
+        op.rename_table("unadded-product", "unadded_product")
+
+    if "products" in table_names:
+        foreign_keys = inspector.get_foreign_keys("products")
+        for fk in foreign_keys:
+            if fk["referred_table"] == "products-item":
+                op.drop_constraint(fk["name"], "products", type_="foreignkey")
+                op.create_foreign_key(
+                    "products_id_product_item_fkey",
+                    "products",
+                    "products_item",
+                    ["id_product_item"],
+                    ["id"],
+                )
+                break
 
     # ─── 2. last_update → NOT NULL (+ default + заполнение) ───────────
     # 2.0 Добавляем колонку только если её ещё нет
@@ -108,7 +120,12 @@ def upgrade() -> None:
         sa.Column("event_id", sa.Integer, nullable=False),
         sa.Column("place", sa.Integer, nullable=False),
         sa.Column("rewards", sa.JSON(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.func.now(),
+        ),
         sa.ForeignKeyConstraint(["event_id"], ["events.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.UniqueConstraint("user_id", "event_id", name="uq_reward_user_event"),

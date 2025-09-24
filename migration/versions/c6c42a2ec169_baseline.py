@@ -1,9 +1,4 @@
-"""baseline
-
-Revision ID: c6c42a2ec169
-Revises:
-Create Date: 2025-07-25 10:23:00.000000
-"""
+"""baseline schema aligned with current ORM models"""
 
 from alembic import op
 import sqlalchemy as sa
@@ -15,74 +10,141 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # 1️⃣ users ─ источник для всех ссылок «на пользователя»
     op.create_table(
         "users",
         sa.Column("id", sa.Integer, primary_key=True),
-        sa.Column("login", sa.String(255), nullable=False, unique=True),
-        sa.Column("password_hash", sa.String(255), nullable=False),
+        sa.Column("phone", sa.String(length=255), nullable=False, unique=True),
+        sa.Column("coins", sa.Integer, nullable=False, server_default=sa.text("0")),
+        sa.Column(
+            "skin",
+            sa.String(length=255),
+            nullable=False,
+            server_default=sa.text("'38ef8571-0e7d-4926-88db-fcb5a8892adb'"),
+        ),
+        sa.Column("common_seed", sa.Integer, nullable=False, server_default=sa.text("0")),
+        sa.Column("epic_seed", sa.Integer, nullable=False, server_default=sa.text("0")),
+        sa.Column("rare_seed", sa.Integer, nullable=False, server_default=sa.text("0")),
+        sa.Column("water", sa.Integer, nullable=False, server_default=sa.text("0")),
+        sa.Column("level", sa.Integer, nullable=False, server_default=sa.text("1")),
+        sa.Column("booster", sa.Integer, nullable=False, server_default=sa.text("0")),
+        sa.Column("item", sa.Integer, nullable=False, server_default=sa.text("0")),
+        sa.Column("pot", sa.Integer, nullable=False, server_default=sa.text("0")),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
-            server_default=sa.func.now(),
             nullable=False,
+            server_default=sa.func.now(),
+        ),
+        sa.Column(
+            "last_update",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.func.now(),
         ),
     )
+    op.create_index("ix_users_phone", "users", ["phone"], unique=True)
 
-    # 2️⃣ products-item ─ справочник ингредиентов/ресурсов
     op.create_table(
-        "products-item",
+        "products_item",
         sa.Column("id", sa.Integer, primary_key=True),
-        sa.Column("skin", sa.String(), server_default="", nullable=False),
-        sa.Column("gold", sa.Integer, nullable=False),
-        sa.Column("wood", sa.Integer, nullable=False),
-        sa.Column("stone", sa.Integer, nullable=False),
-        sa.Column("grass", sa.Integer, nullable=False),
-        sa.Column("berry", sa.Integer, nullable=False),
-        sa.Column("brick", sa.Integer, nullable=False),
-        sa.Column("fish", sa.Integer, nullable=False),
-        sa.Column("boards", sa.Integer, nullable=False),
-        sa.Column("rope", sa.Integer, server_default="0", nullable=False),
+        sa.Column("skin", sa.String(), nullable=False, server_default=sa.text("''")),
+        sa.Column("coins", sa.Integer, nullable=False, server_default=sa.text("0")),
+        sa.Column("common_seed", sa.Integer, nullable=False, server_default=sa.text("0")),
+        sa.Column("epic_seed", sa.Integer, nullable=False, server_default=sa.text("0")),
+        sa.Column("rare_seed", sa.Integer, nullable=False, server_default=sa.text("0")),
+        sa.Column("water", sa.Integer, nullable=False, server_default=sa.text("0")),
+        sa.Column("level", sa.Integer, nullable=False, server_default=sa.text("0")),
+        sa.Column("booster", sa.Integer, nullable=False, server_default=sa.text("0")),
+        sa.Column("item", sa.Integer, nullable=False, server_default=sa.text("0")),
+        sa.Column("pot", sa.Integer, nullable=False, server_default=sa.text("0")),
     )
 
-    # 3️⃣ products ─ сама таблица товаров + FK на products-item
-    #    ▸ добавьте/замените поля под свою модель Product
     op.create_table(
         "products",
-        sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+        sa.Column("id", sa.Integer, primary_key=True),
+        sa.Column("name", sa.String(length=255), nullable=False),
+        sa.Column("price", sa.Integer, nullable=False),
         sa.Column("id_product_item", sa.Integer, nullable=False),
-        sa.Column("title", sa.String(255), nullable=False),
-        sa.Column("price", sa.Numeric(10, 2), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["id_product_item"],
-            ["products-item.id"],
-            name="products_id_product_item_fkey",
-        ),
+        sa.ForeignKeyConstraint(["id_product_item"], ["products_item.id"],),
     )
 
-    # 4️⃣ unadded-product ─ хранит «не добавленные» товары пользователя
     op.create_table(
-        "unadded-product",
-        sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+        "unadded_product",
+        sa.Column("id", sa.Integer, primary_key=True),
         sa.Column("id_user", sa.Integer, nullable=False),
         sa.Column("productId", sa.Integer, nullable=False),
-        sa.ForeignKeyConstraint(
-            ["id_user"], ["users.id"], name="unadded-product_id_user_fkey"
-        ),
-        sa.ForeignKeyConstraint(
-            ["productId"], ["products.id"], name="unadded-product_productId_fkey"
-        ),
+        sa.ForeignKeyConstraint(["id_user"], ["users.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["productId"], ["products.id"], ondelete="CASCADE"),
     )
 
-    # 5️⃣ events ─ события (уберите, если уже есть в другой ревизии)
+    op.create_table(
+        "transactions",
+        sa.Column("id", sa.Integer, primary_key=True),
+        sa.Column(
+            "status",
+            sa.String(length=255),
+            nullable=False,
+            server_default=sa.text("'unknown'"),
+        ),
+        sa.Column("productId", sa.Integer, nullable=False),
+        sa.Column("id_user", sa.Integer, nullable=False),
+        sa.Column(
+            "purchaseId",
+            sa.String(length=255),
+            nullable=False,
+            server_default=sa.text("''"),
+        ),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.func.now(),
+        ),
+        sa.ForeignKeyConstraint(["productId"], ["products.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["id_user"], ["users.id"], ondelete="CASCADE"),
+    )
+    op.create_index("ix_transactions_purchaseId", "transactions", ["purchaseId"], unique=False)
+
+    op.create_table(
+        "roulette_items",
+        sa.Column("id", sa.Integer, primary_key=True),
+        sa.Column("user_id", sa.Integer, nullable=False),
+        sa.Column("item", sa.String(length=255), nullable=False),
+        sa.Column("quantity", sa.Integer, nullable=False, server_default=sa.text("0")),
+        sa.Column("chance", sa.Float, nullable=False, server_default=sa.text("0")),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+    )
+    op.create_index("ix_roulette_items_user_id", "roulette_items", ["user_id"], unique=False)
+
     op.create_table(
         "events",
         sa.Column("id", sa.Integer, primary_key=True),
-        sa.Column("name", sa.String(255), nullable=False),
-        sa.Column("date", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("name", sa.String(length=255), nullable=False),
+        sa.Column("event_type", sa.String(length=255), nullable=False),
+        sa.Column("logo", sa.String(length=255), nullable=False),
+        sa.Column("start_date", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("end_date", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("level_ids", sa.JSON(), nullable=False),
     )
 
-    # 6️⃣ event_ratings ─ оценки событий
+    op.create_table(
+        "event_history",
+        sa.Column("id", sa.Integer, primary_key=True),
+        sa.Column("event_id", sa.Integer, nullable=False),
+        sa.Column("ended_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("results", sa.JSON(), nullable=False),
+        sa.ForeignKeyConstraint(["event_id"], ["events.id"], ondelete="CASCADE"),
+    )
+
+    op.create_table(
+        "event_prizes",
+        sa.Column("id", sa.Integer, primary_key=True),
+        sa.Column("event_id", sa.Integer, nullable=False),
+        sa.Column("place", sa.Integer, nullable=False),
+        sa.Column("rewards", sa.JSON(), nullable=False),
+        sa.ForeignKeyConstraint(["event_id"], ["events.id"], ondelete="CASCADE"),
+    )
+
     op.create_table(
         "event_ratings",
         sa.Column("id", sa.Integer, primary_key=True),
@@ -93,11 +155,32 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
     )
 
+    op.create_table(
+        "unclaimed_rewards",
+        sa.Column("id", sa.Integer, primary_key=True),
+        sa.Column("user_id", sa.Integer, nullable=False),
+        sa.Column("event_id", sa.Integer, nullable=False),
+        sa.Column("place", sa.Integer, nullable=False),
+        sa.Column("rewards", sa.JSON(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.ForeignKeyConstraint(["event_id"], ["events.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.UniqueConstraint("user_id", "event_id", name="uq_reward_user_event"),
+    )
+
 
 def downgrade() -> None:
+    op.drop_table("unclaimed_rewards")
     op.drop_table("event_ratings")
+    op.drop_table("event_prizes")
+    op.drop_table("event_history")
     op.drop_table("events")
-    op.drop_table("unadded-product")
+    op.drop_index("ix_roulette_items_user_id", table_name="roulette_items")
+    op.drop_table("roulette_items")
+    op.drop_index("ix_transactions_purchaseId", table_name="transactions")
+    op.drop_table("transactions")
+    op.drop_table("unadded_product")
     op.drop_table("products")
-    op.drop_table("products-item")
+    op.drop_table("products_item")
+    op.drop_index("ix_users_phone", table_name="users")
     op.drop_table("users")
