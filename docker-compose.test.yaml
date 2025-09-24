@@ -1,22 +1,28 @@
 services:
+  # Development PostgreSQL service.  No explicit container name is set
+  # so that Docker Compose will generate one using the project name
+  # automatically.  Environment variables are read from ``.env.test``.
   postgres:
-    container_name: survive_dev_postgres
     env_file: .env.test
     ports:
-      - "3334:5432"
+      - "10011:5432"
     volumes:
       - postgres-data-dev:/var/lib/postgresql/data
 
+  # Development FastAPI service.  Uses the same code as production but
+  # is configured via ``.env.test``.  The port mapping exposes the
+  # service on 8083.
   fastapi:
-    container_name: survive_dev_fastapi
     env_file: .env.test
     ports:
-      - "8083:8000"
+      - "10013:8000"
 
+  # Development Redis service.  Exposed on port 6381.
   redis:
-    container_name: survive_dev_redis
     ports:
-      - "6381:6379"
+      - "10015:6379"
 
 volumes:
+  # Named volume for the dev database.  The project name will be
+  # prefixed automatically when Docker Compose creates this volume.
   postgres-data-dev:

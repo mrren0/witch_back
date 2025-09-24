@@ -1,28 +1,31 @@
+# Требуемые CI Variables (Masked/Protected):
+# SSH_USER, SSH_HOST, (любой из) SSH_PRIVATE_KEY_FILE / SSH_PRIVATE_KEY_B64 / SSH_PRIVATE_KEY
+# DB_USER, DB_PASSWORD
+# (опц.) PROD_DB_NAME, DEV_DB_NAME, DEV_DB_ADMIN_USER, PROD_DB_CONTAINER
+
+image: debian:stable-slim   # игнорируется на shell-runner
+
 variables:
   PROJECT_NAME: "$CI_PROJECT_NAME"
   SSH_TARGET: "$SSH_USER@$SSH_HOST"
 
-  # Пути деплоя
-  PROD_PATH: "/home/gitlab-runner/survive"
-  DEV_PATH:  "/home/gitlab-runner/survive_dev"
+  # Пути деплоя (по имени проекта)
+  PROD_PATH: "/home/gitlab-runner/${CI_PROJECT_NAME}"
+  DEV_PATH:  "/home/gitlab-runner/${CI_PROJECT_NAME}_dev"
 
-  # Путь для бэкапов (РОВНО этот каталог; без подпапок месяца)
+  # Путь для бэкапов (ровно этот каталог)
   BACKUP_BASE: "/home/gitlab-runner/backup/$CI_PROJECT_NAME"
 
-  # Контейнеры и параметры БД для бэкапа prod
-  PROD_DB_CONTAINER: "survive_postgres"
+  # Параметры БД (как было)
   PROD_DB_USER: "myuser"
   PROD_DB_NAME: "mydatabase"
 
   # Для синхры dev
-  DEV_DB_CONTAINER: "survive_dev_postgres"
-  DEV_DB_ADMIN_USER: "myuser"        # админ в dev-контейнере
+  DEV_DB_ADMIN_USER: "myuser"
   DEV_DB_NAME: "mydatabase_dev"
 
-  # Быстрее скачивание в раннере
   GIT_STRATEGY: fetch
 
-  # Общие exclude для rsync
   RSYNC_EXCLUDES: >
     --exclude .git
     --exclude .gitlab-ci.yml
@@ -32,13 +35,13 @@ variables:
     --exclude logs/
 
 stages:
-  - lint          # <-- добавлено
+  - lint
   - backup
   - test
   - deploy
   - db_sync
 
-# --- общий сниппет для uv + venv, чтобы обойти PEP668 ---
+# --- uv + venv ---
 .uv_setup: &uv_setup
   - set -euo pipefail
   - |
@@ -51,17 +54,43 @@ stages:
   - . venv/bin/activate
   - if [ -f requirements.txt ]; then uv pip install -r requirements.txt; fi
 
+# --- инструменты/ssh: безопасно для shell-runner без root ---
+.setup_tools: &setup_tools
+  - set -euo pipefail
+  - |
+    if [ "$(id -u)" = "0" ] ; then
+      if command -v apt-get >/dev/null 2>&1; then
+        apt-get update && apt-get install -y --no-install-recommends openssh-client rsync curl ca-certificates && rm -rf /var/lib/apt/lists/*
+      elif command -v apk >/dev/null 2>&1; then
+        apk add --no-cache openssh-client rsync curl
+      fi
+    else
+      echo "[i] Non-root shell-runner: пропускаю установку пакетов"
+    fi
+
+.ssh_setup: &ssh_setup
+  - mkdir -p ~/.ssh && chmod 700 ~/.ssh
+  - umask 077
+  - |
+    if [ -n "${SSH_PRIVATE_KEY_FILE:-}" ] && [ -f "$SSH_PRIVATE_KEY_FILE" ]; then
+      cp "$SSH_PRIVATE_KEY_FILE" ~/.ssh/id_key
+    elif [ -n "${SSH_PRIVATE_KEY_B64:-}" ]; then
+      printf '%s' "$SSH_PRIVATE_KEY_B64" | base64 -d > ~/.ssh/id_key
+    else
+      printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_key
+    fi
+  - sed -i 's/\r$//' ~/.ssh/id_key
+  - chmod 600 ~/.ssh/id_key
+  - printf "Host *\n  StrictHostKeyChecking no\n  IdentitiesOnly yes\n  IdentityFile ~/.ssh/id_key\n" > ~/.ssh/config
+  - chmod 600 ~/.ssh/config
+  - ssh -o BatchMode=yes "$SSH_TARGET" "mkdir -p '$PROD_PATH' '$DEV_PATH' '$BACKUP_BASE' && chmod 755 '$PROD_PATH' '$DEV_PATH' '$BACKUP_BASE'"
+
 .default_before: &default_before
   before_script:
-    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
-    - printf "Host *\n  StrictHostKeyChecking no\n" > ~/.ssh/config && chmod 600 ~/.ssh/config
-    - eval "$(ssh-agent -s)"
-    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_rsa && chmod 600 ~/.ssh/id_rsa
-    - ssh-add ~/.ssh/id_rsa
-    # создаём пути прод/дев + базу бэкапов заранее
-    - ssh "$SSH_TARGET" "mkdir -p '$PROD_PATH' '$DEV_PATH' '$BACKUP_BASE' && chmod 755 '$PROD_PATH' '$DEV_PATH' '$BACKUP_BASE'"
+    - *setup_tools
+    - *ssh_setup
 
-# ========== LINT (flake8 через uv; мягкий, не валит пайп) ==========
+# ========== LINT ==========
 lint_soft:
   stage: lint
   allow_failure: true
@@ -85,7 +114,7 @@ lint_soft:
       echo "Линтим (soft): $TARGETS"
       flake8 --extend-ignore=E501,F401,F541,F811,E227 $TARGETS || true
 
-# ========== BACKUP (main & dev): дамп в корень BACKUP_BASE + чистка старше 7 дней
+# ========== BACKUP (мягкий) ==========
 backup_prod:
   stage: backup
   rules:
@@ -99,22 +128,60 @@ backup_prod:
     - |
       ssh -T "$SSH_TARGET" \
         BACKUP_BASE="$BACKUP_BASE" \
-        PROD_DB_CONTAINER="$PROD_DB_CONTAINER" \
-        PROD_DB_USER="$PROD_DB_USER" \
-        PROD_DB_NAME="$PROD_DB_NAME" \
+        PROJECT_NAME="$CI_PROJECT_NAME" \
+        PROD_DB_NAME="${PROD_DB_NAME:-}" \
+        PROD_DB_USER="${PROD_DB_USER:-}" \
+        DB_USER="${DB_USER:-}" \
+        TARGET_PATH="$PROD_PATH" \
+        PROD_DB_CONTAINER="${PROD_DB_CONTAINER:-}" \
         bash -seuo pipefail <<'REMOTE'
       set -euo pipefail
       mkdir -p "$BACKUP_BASE"
+
+      # Выбираем пользователя БД: приоритетно PROD_DB_USER, иначе секрет DB_USER
+      DBU="${PROD_DB_USER:-${DB_USER:-}}"
+      if [ -z "$DBU" ]; then echo "DB user не задан (PROD_DB_USER/DB_USER)"; exit 1; fi
+
+      # Имя БД: PROD_DB_NAME или безопасно из имени проекта
+      SAFE_PROJ="$(echo "$PROJECT_NAME" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/_/g; s/^_+|_+$//g; s/_{2,}/_/g' | cut -c1-63)"
+      DBN="${PROD_DB_NAME:-$SAFE_PROJ}"
+
       FILE="$BACKUP_BASE/backup_$(date +%F_%H-%M).sql"
-      echo "[*] Dump -> $FILE"
-      docker exec "$PROD_DB_CONTAINER" pg_dump -U "$PROD_DB_USER" -d "$PROD_DB_NAME" > "$FILE"
+      echo "[*] Dump $DBN -> $FILE"
+
+      cd "$TARGET_PATH"
+      COMPOSE="-p $PROJECT_NAME -f docker-compose.base.yaml -f docker-compose.prod.yaml"
+
+      # 1) сначала пытаемся через compose-сервис postgres этого проекта
+      if docker compose $COMPOSE ps -q postgres >/dev/null 2>&1 && [ -n "$(docker compose $COMPOSE ps -q postgres)" ]; then
+        docker compose $COMPOSE exec -T postgres pg_dump -U "$DBU" -d "$DBN" > "$FILE"
+      else
+        # 2) ищем контейнер по compose-лейблам проекта/сервиса
+        CID="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT_NAME" --filter "label=com.docker.compose.service=postgres" | head -n1 || true)"
+        # 3) если задан PROD_DB_CONTAINER — используем его
+        if [ -z "$CID" ] && [ -n "$PROD_DB_CONTAINER" ]; then
+          CID="$(docker ps -q --filter "name=$PROD_DB_CONTAINER" | head -n1 || true)"
+        fi
+        # 4) последний шанс: любой контейнер проекта, имя содержит 'postgres'
+        if [ -z "$CID" ]; then
+          CID="$(docker ps --format '{{.ID}} {{.Names}}' | awk -v p="$PROJECT_NAME" '$2 ~ p && tolower($2) ~ /postgres/ {print $1; exit}')" || true
+        fi
+
+        if [ -n "$CID" ]; then
+          docker exec "$CID" pg_dump -U "$DBU" -d "$DBN" > "$FILE"
+        else
+          echo "[i] postgres не найден/не запущен для проекта '$PROJECT_NAME' — бэкап пропускаю (вероятно первый деплой)."
+          exit 0
+        fi
+      fi
+
       chown gitlab-runner:gitlab-runner "$FILE" || true
       ls -lh "$FILE"
-      echo "[*] Удаляю бэкапы старше 7 дней..."
+      echo "[*] Чищу бэкапы старше 7 дней…"
       find "$BACKUP_BASE" -type f -name 'backup_*.sql' -mtime +7 -delete
       REMOTE
 
-# ========== TEST (pytest через uv/venv, без системного pip)
+# ========== TEST ==========
 pytest:
   stage: test
   rules:
@@ -129,16 +196,14 @@ pytest:
       TEST_DIRS=""
       [ -d tests ] && TEST_DIRS="tests"
       [ -d src/tests ] && TEST_DIRS="$TEST_DIRS src/tests"
-      if [ -z "$TEST_DIRS" ]; then
-        echo "tests not found → skip"; exit 0
-      fi
+      if [ -z "$TEST_DIRS" ]; then echo "tests not found → skip"; exit 0; fi
       uv pip install pytest pytest-asyncio pytest-cov
       pytest -q --maxfail=1 --disable-warnings --cov=src --cov-report=term-missing
 
-# ========== DEPLOY PROD (main)
+# ========== DEPLOY PROD ==========
 deploy_prod:
   stage: deploy
-  needs: ["backup_prod", "pytest"]   # ждём тесты
+  needs: ["backup_prod", "pytest"]
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
       when: on_success
@@ -146,7 +211,7 @@ deploy_prod:
   variables:
     TARGET_PATH: "$PROD_PATH"
     COMPOSE_FILES: "-f docker-compose.base.yaml -f docker-compose.prod.yaml"
-    COMPOSE_PROJECT: "survive"
+    COMPOSE_PROJECT: "${CI_PROJECT_NAME}"
   <<: *default_before
   script:
     - |
@@ -154,10 +219,7 @@ deploy_prod:
       Project URL : ${CI_PROJECT_URL}
       Commit SHA  : ${CI_COMMIT_SHA}
       From ref    : ${CI_COMMIT_REF_NAME}
-      Commit tag  : ${CI_COMMIT_TAG}
-      Commit auth.: ${CI_COMMIT_AUTHOR}
-      Commit time : ${CI_COMMIT_TIMESTAMP}
-      Stamp       : $(date)
+      Commit time : $(date)
       EOT
     - rsync -a --delete $RSYNC_EXCLUDES ./ "$SSH_TARGET:$TARGET_PATH"
     - ssh "$SSH_TARGET" "rm -f '$TARGET_PATH/docker-compose.test.yaml' || true"
@@ -171,10 +233,10 @@ deploy_prod:
         docker builder prune -f \
       "
 
-# ========== DEPLOY DEV (dev)
+# ========== DEPLOY DEV ==========
 deploy_dev:
   stage: deploy
-  needs: ["backup_prod", "pytest"]   # ждём тесты
+  needs: ["backup_prod", "pytest"]
   rules:
     - if: '$CI_COMMIT_BRANCH == "dev"'
       when: on_success
@@ -182,7 +244,7 @@ deploy_dev:
   variables:
     TARGET_PATH: "$DEV_PATH"
     COMPOSE_FILES: "-f docker-compose.base.yaml -f docker-compose.test.yaml"
-    COMPOSE_PROJECT: "survive_dev"
+    COMPOSE_PROJECT: "${CI_PROJECT_NAME}_dev"
   <<: *default_before
   script:
     - rsync -a --delete $RSYNC_EXCLUDES ./ "$SSH_TARGET:$TARGET_PATH"
@@ -197,7 +259,7 @@ deploy_dev:
         docker builder prune -f \
       "
 
-# ========== MANUAL: залить САМЫЙ СВЕЖИЙ дамп в dev (только dev)
+# ========== MANUAL: DEV DB SYNC ==========
 sync_dev_from_latest_dump:
   stage: db_sync
   rules:
@@ -210,11 +272,12 @@ sync_dev_from_latest_dump:
     - |
       ssh -T "$SSH_TARGET" \
         BACKUP_BASE="$BACKUP_BASE" \
-        DEV_DB_CONTAINER="$DEV_DB_CONTAINER" \
+        PROJECT_NAME="$CI_PROJECT_NAME" \
         DEV_DB_ADMIN_USER="$DEV_DB_ADMIN_USER" \
         DEV_DB_NAME="$DEV_DB_NAME" \
         DEV_DB_USER="myuser_dev" \
         DEV_DB_PASSWORD="$DEV_DB_PASSWORD" \
+        TARGET_PATH="$DEV_PATH" \
         bash -seuo pipefail <<'REMOTE'
       set -euo pipefail
 
@@ -223,19 +286,22 @@ sync_dev_from_latest_dump:
       [ -n "$LAST_DUMP" ] || { echo "Не найдено файлов backup_*.sql в $BACKUP_BASE"; exit 1; }
       echo "[*] Использую: $LAST_DUMP"
 
+      cd "$TARGET_PATH"
+      COMPOSE="-p ${PROJECT_NAME}_dev -f docker-compose.base.yaml -f docker-compose.test.yaml"
+
       echo "[*] Закрываю коннекты"
-      docker exec "$DEV_DB_CONTAINER" psql -U "$DEV_DB_ADMIN_USER" -d postgres -c \
+      docker compose $COMPOSE exec -T postgres psql -U "$DEV_DB_ADMIN_USER" -d postgres -c \
         "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='${DEV_DB_NAME}' AND pid<>pg_backend_pid();" || true
 
       echo "[*] Пересоздаю БД $DEV_DB_NAME"
-      docker exec "$DEV_DB_CONTAINER" dropdb  -U "$DEV_DB_ADMIN_USER" --if-exists "$DEV_DB_NAME"
-      docker exec "$DEV_DB_CONTAINER" createdb -U "$DEV_DB_ADMIN_USER" "$DEV_DB_NAME"
+      docker compose $COMPOSE exec -T postgres dropdb  -U "$DEV_DB_ADMIN_USER" --if-exists "$DEV_DB_NAME"
+      docker compose $COMPOSE exec -T postgres createdb -U "$DEV_DB_ADMIN_USER" "$DEV_DB_NAME"
 
       echo "[*] Восстанавливаю $LAST_DUMP"
-      docker exec -i "$DEV_DB_CONTAINER" psql -U "$DEV_DB_ADMIN_USER" -d "$DEV_DB_NAME" < "$LAST_DUMP"
+      docker compose $COMPOSE exec -T postgres bash -lc "psql -U '$DEV_DB_ADMIN_USER' -d '$DEV_DB_NAME'" < "$LAST_DUMP"
 
       echo "[*] Создаю роль, если её нет: $DEV_DB_USER"
-      docker exec "$DEV_DB_CONTAINER" psql -U "$DEV_DB_ADMIN_USER" -d postgres -v ON_ERROR_STOP=1 -c "
+      docker compose $COMPOSE exec -T postgres psql -U "$DEV_DB_ADMIN_USER" -d postgres -v ON_ERROR_STOP=1 -c "
         DO \$\$
         BEGIN
           IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${DEV_DB_USER}') THEN
@@ -245,13 +311,13 @@ sync_dev_from_latest_dump:
         \$\$;
       "
 
-      echo "[*] Передаю владение БД и выставляю права"
-      docker exec "$DEV_DB_CONTAINER" psql -U "$DEV_DB_ADMIN_USER" -d postgres -v ON_ERROR_STOP=1 -c "ALTER DATABASE ${DEV_DB_NAME} OWNER TO ${DEV_DB_USER};"
-      docker exec "$DEV_DB_CONTAINER" psql -U "$DEV_DB_ADMIN_USER" -d "$DEV_DB_NAME" -v ON_ERROR_STOP=1 -c "GRANT ALL PRIVILEGES ON SCHEMA public TO ${DEV_DB_USER};"
-      docker exec "$DEV_DB_CONTAINER" psql -U "$DEV_DB_ADMIN_USER" -d "$DEV_DB_NAME" -v ON_ERROR_STOP=1 -c "GRANT ALL PRIVILEGES ON ALL TABLES    IN SCHEMA public TO ${DEV_DB_USER};"
-      docker exec "$DEV_DB_CONTAINER" psql -U "$DEV_DB_ADMIN_USER" -d "$DEV_DB_NAME" -v ON_ERROR_STOP=1 -c "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO ${DEV_DB_USER};"
-      docker exec "$DEV_DB_CONTAINER" psql -U "$DEV_DB_ADMIN_USER" -d "$DEV_DB_NAME" -v ON_ERROR_STOP=1 -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES    TO ${DEV_DB_USER};"
-      docker exec "$DEV_DB_CONTAINER" psql -U "$DEV_DB_ADMIN_USER" -d "$DEV_DB_NAME" -v ON_ERROR_STOP=1 -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO ${DEV_DB_USER};"
+      echo "[*] Права"
+      docker compose $COMPOSE exec -T postgres psql -U "$DEV_DB_ADMIN_USER" -d postgres -v ON_ERROR_STOP=1 -c "ALTER DATABASE ${DEV_DB_NAME} OWNER TO ${DEV_DB_USER};"
+      docker compose $COMPOSE exec -T postgres psql -U "$DEV_DB_ADMIN_USER" -d "$DEV_DB_NAME" -v ON_ERROR_STOP=1 -c "GRANT ALL PRIVILEGES ON SCHEMA public TO ${DEV_DB_USER};"
+      docker compose $COMPOSE exec -T postgres psql -U "$DEV_DB_ADMIN_USER" -d "$DEV_DB_NAME" -v ON_ERROR_STOP=1 -c "GRANT ALL PRIVILEGES ON ALL TABLES    IN SCHEMA public TO ${DEV_DB_USER};"
+      docker compose $COMPOSE exec -T postgres psql -U "$DEV_DB_ADMIN_USER" -d "$DEV_DB_NAME" -v ON_ERROR_STOP=1 -c "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO ${DEV_DB_USER};"
+      docker compose $COMPOSE exec -T postgres psql -U "$DEV_DB_ADMIN_USER" -d "$DEV_DB_NAME" -v ON_ERROR_STOP=1 -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES    TO ${DEV_DB_USER};"
+      docker compose $COMPOSE exec -T postgres psql -U "$DEV_DB_ADMIN_USER" -d "$DEV_DB_NAME" -v ON_ERROR_STOP=1 -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO ${DEV_DB_USER};"
 
-      echo "[✓] Dev восстановлена из $LAST_DUMP, роль ${DEV_DB_USER} готова, права выданы"
+      echo "[✓] Dev восстановлена из $LAST_DUMP, роль ${DEV_DB_USER} готова"
       REMOTE

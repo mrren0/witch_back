@@ -1,20 +1,29 @@
 services:
+  # PostgreSQL database service for production.  Container names are
+  # deliberately omitted so that Docker Compose will automatically
+  # prefix service names with the project name.  Exposing the port
+  # allows connections from the host for debugging and backups.
   postgres:
-    container_name: survive_postgres
     ports:
-      - "3333:5432"
+      - "10010:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
 
+  # FastAPI application service.  It relies on the Dockerfile in this
+  # repository and will be built via the CI/CD pipeline.  The port
+  # mapping exposes the service on 8082 by default.
   fastapi:
-    container_name: survive_fastapi
     ports:
-      - "8082:8000"
+      - "10012:8000"
 
+  # Redis cache service.  The port mapping can be adjusted if needed.
   redis:
-    container_name: survive_redis
     ports:
-      - "6380:6379"
+      - "10014:6379"
 
 volumes:
+  # Named volume for PostgreSQL data.  Docker Compose will prefix
+  # this volume with the project name when creating it (for example,
+  # ``myproject_postgres-data``) to avoid collisions between
+  # different environments.
   postgres-data:
