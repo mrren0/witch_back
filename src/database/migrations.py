@@ -8,11 +8,13 @@ from pathlib import Path
 from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
+from sqlalchemy import inspect
 from sqlalchemy.exc import SQLAlchemyError
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from src.database.connection import Base, engine
+from src.database.models import TokenModel
 
 from src.infra.logger import logger
 
@@ -85,6 +87,25 @@ async def ensure_all_tables_exist() -> None:
     try:
         async with engine.begin() as connection:  # type: AsyncConnection
             await connection.run_sync(Base.metadata.create_all)
+            await connection.run_sync(_ensure_tokens_table_exists)
     except SQLAlchemyError as exc:
         logger.error("Failed to create database tables automatically: %s", exc)
         raise
+
+
+def _ensure_tokens_table_exists(connection) -> None:
+    """Create the ``tokens`` table if it is still missing.
+
+    Under high parallel load with several Gunicorn workers starting at the
+    same time we occasionally observed that the automatic metadata based table
+    creation skipped the ``tokens`` table, leading to ``UndefinedTableError``
+    once the application tried to query it.  The issue was hard to reproduce,
+    but the safest fix is to explicitly verify the table presence after
+    ``Base.metadata.create_all`` and create it manually when necessary.  The
+    check is inexpensive and only runs during application start.
+    """
+
+    inspector = inspect(connection)
+    if "tokens" not in inspector.get_table_names():
+        logger.warning("Tokens table missing – creating it automatically")
+        TokenModel.__table__.create(connection, checkfirst=True)
