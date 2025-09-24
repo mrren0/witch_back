@@ -4,7 +4,11 @@ from fastapi.security import APIKeyHeader
 from starlette.middleware.cors import CORSMiddleware
 
 from src.api.routers import all_routers
-from src.database.migrations import ensure_schema_is_up_to_date
+from src.database.migrations import (
+    ensure_all_tables_exist,
+    ensure_schema_is_up_to_date,
+)
+from src.database.seeds import ensure_master_access_token
 
 # ─── Swagger метаданные ───────────────────────────────────────────────
 tags_metadata = [
@@ -44,6 +48,8 @@ async def _run_db_migrations() -> None:
     """Ensure the database schema is migrated before serving requests."""
 
     ensure_schema_is_up_to_date()
+    await ensure_all_tables_exist()
+    await ensure_master_access_token()
 
 # ─── примеры cURL прямо в Swagger ─────────────────────────────────────
 def custom_openapi():

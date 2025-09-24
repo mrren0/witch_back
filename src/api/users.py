@@ -4,6 +4,8 @@ from starlette.responses import JSONResponse
 from src.business_logic.buy_product import BuyProductBeeline
 from src.business_logic.token import TokenCore
 from src.business_logic.transaction import TransactionCore
+from fastapi.encoders import jsonable_encoder
+
 from src.business_logic.users import UserCore
 from src.repository.product import ProductRepository
 from src.repository.productItems import ProductItemRepository
@@ -77,7 +79,8 @@ async def get_user_api(
         user = token.user
         await UnAddedProductRepository().delete_one(un_added.id)
 
-    return JSONResponse(content=user.to_read_model_without_orm().dict(), status_code=200)
+    user_payload = user.to_read_model_without_orm().model_dump(mode="json")
+    return JSONResponse(content=jsonable_encoder(user_payload), status_code=200)
 
 
 async def _change_user_data(

@@ -27,10 +27,10 @@ class UserModel(Base):
     booster: Mapped[int] = mapped_column(default=0, server_default=text("0"))
     item: Mapped[int] = mapped_column(default=0, server_default=text("0"))
     pot: Mapped[int] = mapped_column(default=0, server_default=text("0"))
-    create_time: Mapped[datetime] = mapped_column(
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
-    last_active_time: Mapped[datetime] = mapped_column(
+    last_update: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
 
@@ -57,6 +57,8 @@ class UserModel(Base):
             booster=self.booster,
             item=self.item,
             pot=self.pot,
+            created_at=self.created_at,
+            last_update=self.last_update,
         )
 
 
