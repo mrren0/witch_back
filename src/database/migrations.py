@@ -7,6 +7,7 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 
 from src.infra.logger import logger
 
@@ -15,6 +16,8 @@ from src.infra.logger import logger
 # the potentially expensive Alembic upgrade.  The other workers will wait for
 # the lock and simply continue once the schema is up to date.
 _LOCK_FILE = Path("/tmp/.alembic_migration.lock")
+# The stamp file contains the latest Alembic revision that was applied.  We
+# compare it with the current head to decide whether an upgrade is required.
 _STAMP_FILE = Path("/tmp/.alembic_migration.stamp")
 
 
@@ -34,14 +37,38 @@ def ensure_schema_is_up_to_date() -> None:
     with _LOCK_FILE.open("w") as lock_fp:
         fcntl.flock(lock_fp, fcntl.LOCK_EX)
         try:
+            alembic_cfg = Config("alembic.ini")
+            script_dir = ScriptDirectory.from_config(alembic_cfg)
+            current_head = script_dir.get_current_head()
+
+            stamped_revision = None
             if _STAMP_FILE.exists():
-                logger.info("Database migrations already applied – skipping upgrade")
+                stamped_revision = _STAMP_FILE.read_text().strip() or None
+
+            if stamped_revision == current_head:
+                logger.info(
+                    "Database schema already at head revision %s – skipping upgrade",
+                    current_head,
+                )
                 return
 
-            logger.info("Applying database migrations…")
-            alembic_cfg = Config("alembic.ini")
+            if stamped_revision is None:
+                logger.info(
+                    "Applying database migrations up to head revision %s…",
+                    current_head,
+                )
+            else:
+                logger.info(
+                    "New migrations detected (%s → %s); applying upgrade…",
+                    stamped_revision,
+                    current_head,
+                )
+
             command.upgrade(alembic_cfg, "head")
-            _STAMP_FILE.write_text("applied")
-            logger.info("Database migrations successfully applied")
+            _STAMP_FILE.write_text(current_head)
+            logger.info(
+                "Database migrations successfully applied – current revision %s",
+                current_head,
+            )
         finally:
             fcntl.flock(lock_fp, fcntl.LOCK_UN)
