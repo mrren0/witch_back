@@ -8,12 +8,13 @@ from pathlib import Path
 from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
-from sqlalchemy import inspect
+from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.engine.url import make_url
 from sqlalchemy.exc import SQLAlchemyError
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from src.database.connection import Base, engine
+from src.database.connection import Base, DATABASE_URL, engine
 from src.database.models import TokenModel
 
 from src.infra.logger import logger
@@ -26,6 +27,45 @@ _LOCK_FILE = Path("/tmp/.alembic_migration.lock")
 # The stamp file contains the latest Alembic revision that was applied.  We
 # compare it with the current head to decide whether an upgrade is required.
 _STAMP_FILE = Path("/tmp/.alembic_migration.stamp")
+
+# Alembic needs a synchronous connection to introspect the currently applied
+# revision.  The application itself talks to the database via ``asyncpg`` but
+# for migration bookkeeping we open a lightweight synchronous engine using the
+# same credentials.
+_SYNC_DATABASE_URL = make_url(DATABASE_URL)
+if "+asyncpg" in _SYNC_DATABASE_URL.drivername:
+    _SYNC_DATABASE_URL = _SYNC_DATABASE_URL.set(
+        drivername=_SYNC_DATABASE_URL.drivername.replace("+asyncpg", "+psycopg2")
+    )
+_SYNC_ENGINE = create_engine(_SYNC_DATABASE_URL)
+
+
+def _ensure_tokens_table_exists_sync() -> None:
+    """Create the ``tokens`` table using a synchronous connection if absent."""
+
+    with _SYNC_ENGINE.begin() as connection:
+        inspector = inspect(connection)
+        if "tokens" in inspector.get_table_names():
+            return
+
+        logger.warning(
+            "Tokens table missing while verifying migrations – creating it automatically",
+        )
+        TokenModel.__table__.create(connection, checkfirst=True)
+        for index in TokenModel.__table__.indexes:
+            index.create(connection, checkfirst=True)
+
+
+def _get_current_database_revision() -> str | None:
+    """Return the revision stored in the database or ``None`` if missing."""
+
+    with _SYNC_ENGINE.connect() as connection:
+        inspector = inspect(connection)
+        if "alembic_version" not in inspector.get_table_names():
+            return None
+
+        result = connection.execute(text("SELECT version_num FROM alembic_version"))
+        return result.scalar()
 
 
 def ensure_schema_is_up_to_date() -> None:
@@ -52,27 +92,41 @@ def ensure_schema_is_up_to_date() -> None:
             if _STAMP_FILE.exists():
                 stamped_revision = _STAMP_FILE.read_text().strip() or None
 
-            if stamped_revision == current_head:
+            database_revision = _get_current_database_revision()
+
+            if database_revision == current_head:
+                _ensure_tokens_table_exists_sync()
+                if stamped_revision != current_head:
+                    _STAMP_FILE.write_text(current_head)
                 logger.info(
                     "Database schema already at head revision %s – skipping upgrade",
                     current_head,
                 )
                 return
 
-            if stamped_revision is None:
+            if stamped_revision == current_head and database_revision != current_head:
+                logger.warning(
+                    "Stamp file recorded head revision %s but database is at %s – forcing upgrade",
+                    stamped_revision,
+                    database_revision or "<uninitialized>",
+                )
+
+            if stamped_revision is None and database_revision is None:
                 logger.info(
                     "Applying database migrations up to head revision %s…",
                     current_head,
                 )
             else:
+                previous_revision = database_revision or stamped_revision
                 logger.info(
                     "New migrations detected (%s → %s); applying upgrade…",
-                    stamped_revision,
+                    previous_revision,
                     current_head,
                 )
 
             command.upgrade(alembic_cfg, "head")
             _STAMP_FILE.write_text(current_head)
+            _ensure_tokens_table_exists_sync()
             logger.info(
                 "Database migrations successfully applied – current revision %s",
                 current_head,
