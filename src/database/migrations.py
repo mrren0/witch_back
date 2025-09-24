@@ -70,7 +70,13 @@ def ensure_schema_is_up_to_date() -> None:
         try:
             alembic_cfg = Config("alembic.ini")
             script_dir = ScriptDirectory.from_config(alembic_cfg)
-            current_head = script_dir.get_current_head()
+                        try:
+                current_head = script_dir.get_current_head()
+                heads = [current_head]
+            except Exception:
+                # multiple heads or other script errors – fall back to all heads
+                heads = list(script_dir.get_heads())
+                current_head = ",".join(heads)
 
             stamped_revision = None
             if _STAMP_FILE.exists():
@@ -107,7 +113,7 @@ def ensure_schema_is_up_to_date() -> None:
                     current_head,
                 )
 
-            command.upgrade(alembic_cfg, "head")
+            command.upgrade(alembic_cfg, "heads")
             _STAMP_FILE.write_text(current_head)
             logger.info(
                 "Database migrations successfully applied – current revision %s",

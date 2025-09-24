@@ -10,6 +10,10 @@ depends_on = None
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    insp = sa.inspect(bind)
+    if "users" in insp.get_table_names():
+        return
     op.create_table(
         "users",
         sa.Column("id", sa.Integer, primary_key=True),
