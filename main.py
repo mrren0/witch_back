@@ -4,6 +4,7 @@ from fastapi.security import APIKeyHeader
 from starlette.middleware.cors import CORSMiddleware
 
 from src.api.routers import all_routers
+from src.database.migrations import ensure_schema_is_up_to_date
 
 # ─── Swagger метаданные ───────────────────────────────────────────────
 tags_metadata = [
@@ -36,6 +37,13 @@ app.add_middleware(
 # ─── маршруты ─────────────────────────────────────────────────────────
 for router in all_routers:
     app.include_router(router)
+
+
+@app.on_event("startup")
+async def _run_db_migrations() -> None:
+    """Ensure the database schema is migrated before serving requests."""
+
+    ensure_schema_is_up_to_date()
 
 # ─── примеры cURL прямо в Swagger ─────────────────────────────────────
 def custom_openapi():
