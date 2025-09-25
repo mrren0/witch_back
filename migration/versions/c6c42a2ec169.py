@@ -2,7 +2,7 @@
 """Initial schema for witch (single, consolidated migration).
 
 Revision ID: 0001_init
-Revises:
+Revises: c6c42a2ec169
 Create Date: 2025-09-25
 
 This migration redefines the entire schema in a single revision to replace
