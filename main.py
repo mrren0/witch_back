@@ -15,6 +15,7 @@ tags_metadata = [
     {"name": "Auth",    "description": "Авторизация и платежи"},
     {"name": "User",    "description": "Профиль игрока и ресурсы"},
     {"name": "Product", "description": "Каталог магазинов"},
+    {"name": "Roulette","description": "Персональные рулетки"},
     {"name": "Events",  "description": "Соревнования и лидерборды"},
     {"name": "Prizes",  "description": "Незабранные награды"},
 ]
