@@ -1,13 +1,11 @@
+"""Initial consolidated schema for witch.
 
-"""Initial schema for witch (single, consolidated migration).
-
-Revision ID: 0001_init
-Revises: c6c42a2ec169
+Revision ID: c6c42a2ec169
+Revises:
 Create Date: 2025-09-25
 
-This migration redefines the entire schema in a single revision to replace
-legacy, branched histories. Apply on a **clean/dev** database or after stamping
-to this revision if the tables already exist.
+This single revision creates the full schema currently used by the codebase.
+Use on a clean dev DB, or run `alembic stamp base` first, then `alembic upgrade head`.
 """
 
 from alembic import op
@@ -15,7 +13,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision = "0001_init"
+revision = "c6c42a2ec169"
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -42,7 +40,7 @@ def upgrade() -> None:
     )
     op.create_index("ix_users_phone", "users", ["phone"], unique=True)
 
-    # products_item (minimal, used as catalog of item types)
+    # products_item
     op.create_table(
         "products_item",
         sa.Column("id", sa.Integer, primary_key=True),
@@ -55,11 +53,10 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer, primary_key=True),
         sa.Column("name", sa.String(length=255), nullable=False),
         sa.Column("price", sa.Integer, nullable=False, server_default=sa.text("0")),
-        # optional link to a catalog item type
         sa.Column("item_id", sa.Integer, sa.ForeignKey("products_item.id"), nullable=True),
     )
 
-    # tokens (auth)
+    # tokens
     op.create_table(
         "tokens",
         sa.Column("id", sa.Integer, primary_key=True),
@@ -71,7 +68,7 @@ def upgrade() -> None:
     op.create_index("ix_tokens_id_user", "tokens", ["id_user"], unique=False)
     op.create_index("ix_tokens_token", "tokens", ["token"], unique=True)
 
-    # transactions (purchase history)
+    # transactions
     op.create_table(
         "transactions",
         sa.Column("id", sa.Integer, primary_key=True),
@@ -83,7 +80,7 @@ def upgrade() -> None:
     )
     op.create_index("ix_transactions_purchaseId", "transactions", ["purchaseId"], unique=True)
 
-    # unadded_product (gold not yet applied to a user after success purchase)
+    # unadded_product
     op.create_table(
         "unadded_product",
         sa.Column("id", sa.Integer, primary_key=True),
@@ -92,7 +89,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("NOW()")),
     )
 
-    # roulette items
+    # roulette_items
     op.create_table(
         "roulette_items",
         sa.Column("id", sa.Integer, primary_key=True),
@@ -115,7 +112,7 @@ def upgrade() -> None:
         sa.Column("level_ids", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
     )
 
-    # prizes per event / place
+    # event_prizes
     op.create_table(
         "event_prizes",
         sa.Column("id", sa.Integer, primary_key=True),
@@ -124,7 +121,7 @@ def upgrade() -> None:
         sa.Column("rewards", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
     )
 
-    # leaderboard / results
+    # event_ratings
     op.create_table(
         "event_ratings",
         sa.Column("id", sa.Integer, primary_key=True),
@@ -133,7 +130,7 @@ def upgrade() -> None:
         sa.Column("result", sa.Float, nullable=False),
     )
 
-    # history of completed events
+    # event_history
     op.create_table(
         "event_history",
         sa.Column("id", sa.Integer, primary_key=True),
@@ -142,7 +139,7 @@ def upgrade() -> None:
         sa.Column("results", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
     )
 
-    # prizes that were not yet claimed by a user after event
+    # unclaimed_rewards
     op.create_table(
         "unclaimed_rewards",
         sa.Column("id", sa.Integer, primary_key=True),
