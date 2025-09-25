@@ -12,6 +12,7 @@ all_routers = [
     user_router,
     product_router,
     auth_router,
+    roulette_router,
     events_router,
     prizes_router,
     system_router,
