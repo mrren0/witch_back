@@ -275,7 +275,7 @@ sync_dev_from_latest_dump:
         PROJECT_NAME="$CI_PROJECT_NAME" \
         DEV_DB_ADMIN_USER="$DEV_DB_ADMIN_USER" \
         DEV_DB_NAME="$DEV_DB_NAME" \
-        DEV_DB_USER="myuser_dev" \
+        DEV_DB_USER="myuser" \
         DEV_DB_PASSWORD="$DEV_DB_PASSWORD" \
         TARGET_PATH="$DEV_PATH" \
         bash -seuo pipefail <<'REMOTE'
