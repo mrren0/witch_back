@@ -32,11 +32,11 @@ async def add_item_product(user, items_product) -> UserSchemaForChange:
     if items_product.level:
         user.level += items_product.level
     if items_product.booster:
-        user.booster += items_product.booster
+        user.booster = items_product.booster
     if items_product.item:
-        user.item += items_product.item
+        user.item = items_product.item
     if items_product.pot:
-        user.pot += items_product.pot
+        user.pot = items_product.pot
 
     return UserSchemaForChange(
         coins=user.coins,
