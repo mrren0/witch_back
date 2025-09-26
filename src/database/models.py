@@ -24,9 +24,9 @@ class UserModel(Base):
     rare_seed: Mapped[int] = mapped_column(default=0, server_default=text("0"))
     water: Mapped[int] = mapped_column(default=0, server_default=text("0"))
     level: Mapped[int] = mapped_column(default=1, server_default=text("1"))
-    booster: Mapped[int] = mapped_column(default=0, server_default=text("0"))
-    item: Mapped[int] = mapped_column(default=0, server_default=text("0"))
-    pot: Mapped[int] = mapped_column(default=0, server_default=text("0"))
+    booster: Mapped[str] = mapped_column(default="", server_default=text("''"))
+    item: Mapped[str] = mapped_column(default="", server_default=text("''"))
+    pot: Mapped[str] = mapped_column(default="", server_default=text("''"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -90,9 +90,9 @@ class ProductItemModel(Base):
     rare_seed: Mapped[int] = mapped_column(default=0, server_default=text("0"))
     water: Mapped[int] = mapped_column(default=0, server_default=text("0"))
     level: Mapped[int] = mapped_column(default=0, server_default=text("0"))
-    booster: Mapped[int] = mapped_column(default=0, server_default=text("0"))
-    item: Mapped[int] = mapped_column(default=0, server_default=text("0"))
-    pot: Mapped[int] = mapped_column(default=0, server_default=text("0"))
+    booster: Mapped[str] = mapped_column(default="", server_default=text("''"))
+    item: Mapped[str] = mapped_column(default="", server_default=text("''"))
+    pot: Mapped[str] = mapped_column(default="", server_default=text("''"))
 
     products: Mapped[list["ProductModel"]] = relationship(
         "ProductModel", back_populates="item"

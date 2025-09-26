@@ -18,9 +18,9 @@ class UserSchema(BaseModel):
     rare_seed: int
     water: int
     level: int
-    booster: int
-    item: int
-    pot: int
+    booster: str
+    item: str
+    pot: str
 
     created_at: datetime
     last_update: datetime
@@ -40,9 +40,9 @@ class UserSchemaForChange(BaseModel):
     rare_seed: int
     water: int
     level: int
-    booster: int
-    item: int
-    pot: int
+    booster: str
+    item: str
+    pot: str
 
     model_config = {"from_attributes": True}
 
@@ -59,9 +59,9 @@ class UserSchemaWithoutOrm(BaseModel):
     rare_seed: int
     water: int
     level: int
-    booster: int
-    item: int
-    pot: int
+    booster: str
+    item: str
+    pot: str
 
     created_at: datetime
     last_update: datetime
